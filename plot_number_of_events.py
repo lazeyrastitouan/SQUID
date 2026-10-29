@@ -1,7 +1,8 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import matplotlib
-from plot_shaded import plot_upper_limit
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+from plot_fancy import plot_upper_limit, add_y_jump   # plot_fancy.py is left untouched
 
 plt.rc('text', usetex=True)
 plt.rc('font', family='serif')
@@ -9,87 +10,95 @@ plt.rc('font', family='serif')
 matplotlib.rc('xtick', labelsize=14)
 matplotlib.rc('ytick', labelsize=14)
 
-
-#[0]sigma, [1]Nhod full, [2]Ngal full, [3]err(Nfull), [4]Nhod frac, [5]err(Nhodfrac), [6]Ngalfrac, [7]err(Ngalfrac), [8]Npbhfull, [9]err(Npbhfull), [10]Npbhfrac, [11]err(Npbhfrac)
-rates_m05 = np.loadtxt("sigma_Nabh_Nbns_Npbh_Mmin0.5_Rmin49.8_ET_2L.txt").T
-rates_m1  = np.loadtxt("sigma_Nabh_Nbns_Npbh_Mmin1.0_Rmin29.3_ET_2L.txt").T
-
+#------------------------------------------------------------------ settings
+config  = 'ET_2L'
 years   = 10
-yfactor = 19.53/3.61*8.02/23.22
+yfactor = 19.53/3.61*8.02/23.22        # BOSS-like -> DESI-like (secondary axis = primary * yfactor)
+JUMP    = dict(ymin=5e-10, ylow=5e-9, yhigh=1e-4, ymax=5, gap=0.5)   # broken y axis, same for both panels
 
-fig, axs = plt.subplots(1,2,figsize=(12,4),sharey=True)
-plt.subplots_adjust(wspace=0.07, right=0.72)
-axs[0].set_ylabel(r'BOSS-like \\ \# event / 10yr',fontsize = 14)
+#one entry per panel; the file name AND the printed R_min come from the same numbers (no way to get out of sync)
+panels = [dict(mmin=0.5, rmin=49.8), dict(mmin=1.0, rmin=29.3)]
 
-sigma         = np.array([0,0.3,0.6,0.8,1,1.2,1.5])
-hod_frac_05   = [(rates_m05[4,0]+rates_m05[5,0])*years]*len(sigma)
-astro_full_05 = [(rates_m05[1,0]+rates_m05[3,0])*years]*len(sigma)
-gal_frac_05   = [(rates_m05[6,0]+rates_m05[7,0])*years]*len(sigma)
-hod_frac_1    = [(rates_m1[4,0]+rates_m1[5,0])*years]*len(sigma)
-astro_full_1  = [(rates_m1[1,0]+rates_m1[3,0])*years]*len(sigma)
-gal_frac_1    = [(rates_m1[6,0]+rates_m1[7,0])*years]*len(sigma)
+#columns of the input files
+COL = dict(sigma=0, abh_full=1, bns_full=2, pbh_full=3, pbh_full_err=4,
+           abh_hod=5, abh_obs=6, bns_hod=7, bns_obs=8, pbh_frac=9, pbh_frac_err=10)
 
-#axs[0]: Mmin = 0.5 
-axs[0].plot(sigma,hod_frac_05,'b--',label=r'ABH HOD void frac')
-axs[0].errorbar(sigma,hod_frac_05,xerr=0.0,yerr=[rates_m05[5,0]*years]*len(sigma),uplims=True,capsize=2,fmt='b.')
-axs[0].plot(sigma,astro_full_05,'b-',label=r'ABH full voids')
-axs[0].errorbar(sigma,astro_full_05,xerr=0.0,yerr=[rates_m05[3,0]*years]*len(sigma),uplims=True,capsize=2,fmt='b.')
-axs[0].plot(sigma+0.02,gal_frac_05,color='cyan',ls='--',label=r'ABH Obs void frac')
-axs[0].errorbar(sigma+0.02,gal_frac_05,xerr=0.0,yerr=[rates_m05[7,0]*years]*len(sigma),uplims=True,capsize=2,marker='.',ls='--',fmt='cyan')
-axs[0].plot(rates_m05[0],rates_m05[10]*years,'r--',label=r'PBH void frac')
-axs[0].errorbar(rates_m05[0],rates_m05[10]*years,xerr=0.0,yerr=rates_m05[11]*years,fmt='r.')
-axs[0].plot(rates_m05[0],rates_m05[8]*years,'r-',label=r'PBH full voids')
-axs[0].errorbar(rates_m05[0],rates_m05[8]*years,xerr=0.0,yerr=rates_m05[9]*years,fmt='r.')
-#axs[1]: Mmin = 1
-axs[1].plot(sigma,hod_frac_1,'b--',label=r'ABH HOD void frac')
-axs[1].errorbar(sigma,hod_frac_1,xerr=0.0,yerr=[rates_m1[5,0]*years]*len(sigma),uplims=True,capsize=2,fmt='b.')
-axs[1].plot(sigma,astro_full_1,'b-',label=r'ABH full voids')
-axs[1].errorbar(sigma,astro_full_1,xerr=0.0,yerr=[rates_m1[3,0]*years]*len(sigma),uplims=True,capsize=2,fmt='b.')
-axs[1].plot(sigma+0.02,gal_frac_1,color='cyan',ls='--',label=r'ABH Obs void frac')
-axs[1].errorbar(sigma+0.02,gal_frac_1,xerr=0.0,yerr=[rates_m1[7,0]*years]*len(sigma),uplims=True,capsize=2,marker='.',ls='--',fmt='cyan')
-axs[1].plot(rates_m1[0],rates_m1[10]*years,'r--',label=r'PBH void frac')
-axs[1].errorbar(rates_m1[0],rates_m1[10]*years,xerr=0.0,yerr=rates_m1[11]*years,fmt='r.')
-axs[1].plot(rates_m1[0],rates_m1[8]*years,'r-',label=r'PBH full voids')
-axs[1].errorbar(rates_m1[0],rates_m1[8]*years,xerr=0.0,yerr=rates_m1[9]*years,fmt='r.')
+#------------------------------------------------------------------ helpers
+def add_converted_yaxis(ax, factor, cut=None, labels=True):
+	"""Secondary y axis on the right showing  y*factor,  with exactly the same scale as `ax`
+	(log, or broken log from add_y_jump).  Call it AFTER add_y_jump / set_yscale on `ax`.
+	cut=(ylow,yhigh) is the removed range in the units of `ax`: no ticks are put inside it.
 
-#axs[0].set_title(r"$M_{min} = 0.5 M_\odot$, $R_{min} = 49.8$ Mpc",fontsize=14)
-#axs[1].set_title(r"$M_{min} = 1 M_\odot$, $R_{min} = 25.7$ Mpc",fontsize=14)
-axs[0].text(0.3,0.022,r"$M_{min} = 0.5 M_\odot$",fontsize=14)
-axs[0].text(0.3,0.013,r"$R_{min} = 49.8$ Mpc",fontsize=14)
-axs[1].text(0.3,0.022,r"$M_{min} = 1 M_\odot$",fontsize=14)
-axs[1].text(0.3,0.013,r"$R_{min} = 25.7$ Mpc",fontsize=14)
+	Why not secondary_yaxis(functions=...)+set_yscale('log'): matplotlib's own secondary scale only
+	knows the linear conversion, and set_yscale('log') then spreads the converted range as a plain
+	log axis, which does not match the jump scale of the parent -> ticks end up in the wrong place."""
+	tr  = ax.yaxis.get_transform()          # parent data -> scaled coordinate (includes the jump)
+	itr = tr.inverted()
+	to_scaled   = lambda s: tr.transform_non_affine(np.asarray(s, dtype=float)/factor)
+	from_scaled = lambda v: itr.transform_non_affine(np.asarray(v, dtype=float))*factor
+	sec = ax.secondary_yaxis('right', functions=(lambda y: y*factor, lambda y: y/factor))
+	sec.set_yscale('function', functions=(to_scaled, from_scaled))   # secondary value s sits where parent value s/factor sits
+	#ticks: full decades of the converted quantity, only in the visible part
+	lo, hi  = np.array(ax.get_ylim())*factor
+	ticks   = 10.0**np.arange(np.ceil(np.log10(lo)), np.floor(np.log10(hi))+1)
+	if cut is not None:
+		ticks = ticks[(ticks/factor <= cut[0]) | (ticks/factor >= cut[1])]
+	sec.yaxis.set_major_locator(mticker.FixedLocator(ticks))
+	sec.yaxis.set_major_formatter(mticker.LogFormatterSciNotation())
+	sec.yaxis.set_minor_locator(mticker.NullLocator())
+	sec.tick_params(axis='y', which='both', labelright=labels)
+	return sec
 
 
-plot_upper_limit(ax, cdf_gal[0], merger_rate_bns_hod_voids+err_merger_rate_bns_hod_voids[1], 'green', r'BNS sim')
+def plot_events(ax, ev, sigma):
+	"""All curves of one panel. ev = events array (columns as in COL), already multiplied by `years`."""
+	fade = dict(marker='.', fade_dex=0.3, alpha0=0.3)
+	s12  = slice(1, 3)    #ABH only has the two middle sigma values
+	#ABH
+	plot_upper_limit(ax, sigma[s12], ev[COL['abh_full']][s12], 'blue', r'ABH full voids',     **fade)
+	plot_upper_limit(ax, sigma[s12], ev[COL['abh_hod']][s12],  'blue', r'ABH HOD void frac',  ls='--', **fade)
+	plot_upper_limit(ax, sigma[s12], ev[COL['abh_obs']][s12],  'blue', r'ABH Obs void frac',  ls=':',  **fade)
+	#BNS
+	plot_upper_limit(ax, sigma, ev[COL['bns_full']], 'green', r'BNS full voids',    **fade)
+	plot_upper_limit(ax, sigma, ev[COL['bns_hod']],  'green', r'BNS HOD void frac', ls='--', **fade)
+	plot_upper_limit(ax, sigma, ev[COL['bns_obs']],  'green', r'BNS Obs void frac', ls=':',  **fade)
+	#PBH
+	ax.plot(sigma, ev[COL['pbh_frac']], 'r--', label=r'PBH void frac')
+	ax.errorbar(sigma, ev[COL['pbh_frac']], yerr=ev[COL['pbh_frac_err']], fmt='r.')
+	ax.plot(sigma, ev[COL['pbh_full']], 'r-', label=r'PBH full voids')
+	ax.errorbar(sigma, ev[COL['pbh_full']], yerr=ev[COL['pbh_full_err']], fmt='r.')
 
+
+#------------------------------------------------------------------ figure
+fig, axs = plt.subplots(1, len(panels), figsize=(9, 5), sharey=True, layout='constrained')
+axs[0].set_ylabel('BOSS-like\n\\# event / 10yr', fontsize=14)    #newline instead of '\\' (a LaTeX '\\' in a label is fragile)
+
+for ax, p in zip(axs, panels):
+	ev = np.loadtxt(f"sigma_Nabh_Nbns_Npbh_Mmin{p['mmin']:.1f}_Rmin{p['rmin']}_{config}.txt").T
+	ev[1:] *= years
+	plot_events(ax, ev, ev[COL['sigma']])
+
+	ax.set_xlabel(r'$\sigma$', fontsize=16)
+	#text in axes coordinates (independent of the broken y scale)
+	ax.text(0.97, 0.16, r"$M_{\rm min} = %g\,M_\odot$" % p['mmin'], transform=ax.transAxes, fontsize=13, ha='right', va='top')
+	ax.text(0.97, 0.08, r"$R_{\rm min} = %g$ Mpc" % p['rmin'],      transform=ax.transAxes, fontsize=13, ha='right', va='top')
+
+#y jump: the axes are shared, so scale, limits and tick locators are common; the cut-out mask and the // marks
+#are per-axes artists, hence one call per panel
 for ax in axs:
-	ax.set_yscale('log')
-	ax.set_xlabel(r'$\sigma$',fontsize = 16)
-	ax.set_xlim(0.27,1.23)
-	ax.set_ylim(0.01,9)
+	add_y_jump(ax, **JUMP)
 
-# Secondary DESI-like y axes
-secax0 = axs[0].secondary_yaxis('right',functions=(lambda y: y * yfactor,lambda y: y / yfactor))
-secax1 = axs[1].secondary_yaxis('right',functions=(lambda y: y * yfactor,lambda y: y / yfactor))
+#secondary (DESI-like) axes: ticks on both panels, labels only on the last one
+cut = (JUMP['ylow'], JUMP['yhigh'])
+for i, ax in enumerate(axs):
+	sec = add_converted_yaxis(ax, yfactor, cut=cut, labels=(i == len(axs)-1))
+	if i == len(axs)-1:
+		sec.set_ylabel('DESI-like\n\\# event / 10yr', fontsize=14, rotation=270, labelpad=28)
 
-# Ticks on ax[0], but no tick labels
-secax0.tick_params(axis='y',which='both',labelright=False)
-# Ticks + labels on ax[1]
-secax1.set_ylabel(r'DESI-like \\ \# event / 10yr',fontsize=14,rotation=270,labelpad=20)
-
-# Use a single shared legend, since both panels show the same line types.
-# The handles/labels are taken from axs[0] and the legend is placed
-# to the right of axs[1].
+#single legend for both panels, title carries the configuration
 handles, labels = axs[0].get_legend_handles_labels()
-axs[1].legend(
-	handles,
-	labels,
-	loc='upper center',
-	bbox_to_anchor=(-0.2, 1.2),
-	ncol=3,
-	frameon=False,
-	prop={'size':12}
-)
+fig.legend(handles, labels, loc='outside upper center', ncols=3, frameon=False,
+           prop={'size': 12}, title="ET configuration 2L", title_fontsize=18)
 
-plt.savefig("Number_of_events.pdf",bbox_inches='tight')
+plt.savefig(f"Number_of_events_{config}.pdf", bbox_inches='tight')
 plt.show()

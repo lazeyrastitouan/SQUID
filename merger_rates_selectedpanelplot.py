@@ -4,39 +4,9 @@ import matplotlib
 import argparse
 from void_factors import*
 from rate_pfav import rate_pfav
-from plot_shaded import plot_upper_limit
+from plot_fancy import plot_upper_limit
+from plot_fancy import add_y_jump
 from matplotlib.patches import Patch
-
-#--- broken y-axis helper
-def add_y_jump(ax, ymin, ylow, yhigh, ymax, gap=0.5):
-	"""Broken log y-axis. Shows [ymin,ylow] and [yhigh,ymax]; the range ylow..yhigh is cut out
-	and replaced by a visual gap of `gap` decades, with // marks on the left/right axes edges.
-	Works on a single axes (so constrained layout, shared legend, transAxes text are unaffected)."""
-	a, b = np.log10(ylow), np.log10(yhigh)
-	def fwd(y):
-		with np.errstate(divide='ignore', invalid='ignore'):
-			u = np.log10(np.asarray(y, dtype=float))
-		return np.where(u <= a, u, np.where(u >= b, u-(b-a)+gap, a+(u-a)*gap/(b-a)))
-	def inv(v):
-		v = np.asarray(v, dtype=float)
-		return 10**np.where(v <= a, v, np.where(v >= a+gap, v+(b-a)-gap, a+(v-a)*(b-a)/gap))
-	ax.set_yscale('function', functions=(fwd, inv))
-	ax.set_ylim(ymin, ymax)
-	#ticks: full decades inside the two visible segments only
-	dec = lambda lo, hi: 10.0**np.arange(np.ceil(np.log10(lo)-1e-9), np.floor(np.log10(hi)+1e-9)+1)
-	ax.yaxis.set_major_locator(matplotlib.ticker.FixedLocator(np.concatenate([dec(ymin,ylow), dec(yhigh,ymax)])))
-	ax.yaxis.set_major_formatter(matplotlib.ticker.LogFormatterSciNotation())
-	ax.yaxis.set_minor_locator(matplotlib.ticker.NullLocator())
-	#mask the cut region (hides data and breaks the spines), then draw the // marks
-	ax.axhspan(ylow, yhigh, facecolor=ax.get_facecolor(), edgecolor='none', zorder=10)
-	tot   = fwd(ymax)-fwd(ymin)
-	y0    = float((fwd(ylow)-fwd(ymin))/tot)
-	y1    = float((fwd(yhigh)-fwd(ymin))/tot)
-	dx, dy = 0.03, 0.025
-	for x in (0, 1):
-		for y in (y0, y1):
-			ax.plot([x-dx/2, x+dx/2], [y-dy, y+dy], transform=ax.transAxes, color='k', lw=1, clip_on=False, zorder=11)
-
 
 plt.rc('text', usetex=True)
 plt.rc('font', family='serif')
